@@ -1,0 +1,4 @@
+File system package that supports cancellation via Context, and is aware
+of active file descriptor limits.
+
+http://godoc.org/github.com/crawshaw/fs
