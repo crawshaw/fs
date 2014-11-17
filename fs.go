@@ -6,6 +6,7 @@ package fs
 import (
 	"io"
 	"os"
+	"runtime"
 	"syscall"
 
 	"golang.org/x/net/context"
@@ -29,29 +30,79 @@ type File struct {
 }
 
 func (f *File) IO(ctx context.Context) IO {
-	return nil
-	//return fio{f, ctx}
+	return fio{f.f, ctx}
 }
 
 func (f *File) Name() string {
 	return f.f.Name()
 }
 
+func newFile(osf *os.File) *File {
+	if osf == nil {
+		return nil
+	}
+	f := &File{osf}
+	runtime.SetFinalizer(osf, func(osf *os.File) {
+		osf.Close()
+		// TODO recover OpenLimit
+	})
+	return f
+}
+
 // Open opens the named file for reading.
 //
 // If the number of opened files exceeds OpenLimit, Open will block until
-func Open(ctx context.Context, name string) (*File, error) {
-	defer interrupt(ctx)()
+// another file is closed.
+//
+// If there is an error, it will be of type *PathError.
+func Open(ctx context.Context, name string) (file *File, err error) {
+	// TODO: is O_NONBLOCK a bad idea?
+	return OpenFile(ctx, name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+}
 
-	f, err := os.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+// OpenFile is the generalized open call; most users will use Open
+// or Create instead.
+//
+// If the number of open files exceeds OpenLimit, Open will block until
+// another file is closed.
+//
+// If there is an error, it will be of type *os.PathError.
+func OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (file *File, err error) {
+	defer interrupt(ctx)()
+	f, err := os.OpenFile(name, flag, perm)
 	if err != nil {
 		return nil, err
 	}
-
-	return &File{f}, nil
+	return newFile(f), nil
 }
 
 type fio struct {
-	f   *File
+	f   *os.File
 	ctx context.Context
+}
+
+func (fio fio) Seek(offset int64, whence int) (int64, error) {
+	defer interrupt(fio.ctx)()
+	return fio.f.Seek(offset, whence)
+}
+
+func (fio fio) Write(p []byte) (n int, err error) {
+	defer interrupt(fio.ctx)()
+	return fio.f.Write(p)
+}
+
+func (fio fio) Read(data []byte) (n int, err error) {
+	defer interrupt(fio.ctx)()
+	return fio.f.Read(data)
+}
+
+func (fio fio) ReadAt(p []byte, off int64) (n int, err error) {
+	defer interrupt(fio.ctx)()
+	return fio.f.ReadAt(p, off)
+}
+
+func (fio fio) Close() error {
+	defer interrupt(fio.ctx)()
+	return fio.f.Close()
+	// TODO recover OpenLimit
 }
