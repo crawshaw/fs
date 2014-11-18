@@ -76,6 +76,15 @@ func OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (fil
 	return newFile(f), nil
 }
 
+// Pipe returns a connected pair of Files; reads from r return bytes written to w.
+func Pipe(ctx context.Context) (r, w *File, err error) {
+	osr, osw, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	return newFile(osr), newFile(osw), nil
+}
+
 type fio struct {
 	f   *os.File
 	ctx context.Context
