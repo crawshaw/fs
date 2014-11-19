@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"log"
 	"runtime"
 	"syscall"
 	"unsafe"
@@ -23,10 +22,7 @@ func funcPC(f interface{}) uintptr {
 func threadID() uintptr
 func sigtramp()
 
-func mysighandler(sig int32) {
-	// TODO replace with no-op we can swap out when testing
-	println("mysighandler", threadID())
-}
+var intrHandler = func(sig int32) {}
 
 func init() {
 	setsighandler()
@@ -50,7 +46,6 @@ func interrupt(ctx context.Context) (cleanup func()) {
 	}()
 
 	return func() {
-		log.Printf("in cleanup")
 		//blocksig()
 		runtime.UnlockOSThread()
 		done <- struct{}{} // don't leak goroutine

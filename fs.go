@@ -95,18 +95,76 @@ func (fio fio) Seek(offset int64, whence int) (int64, error) {
 	return fio.f.Seek(offset, whence)
 }
 
-func (fio fio) Write(p []byte) (n int, err error) {
+func (fio fio) Write(p []byte) (int, error) {
 	defer interrupt(fio.ctx)()
-	return fio.f.Write(p)
+	n := 0
+	for len(p) > 0 {
+		wn, err := fio.f.Write(p)
+		n += wn
+		p = p[wn:]
+		if err != nil {
+			eagain := false
+			if perr, ok := err.(*os.PathError); ok {
+				eagain = perr.Err == syscall.EAGAIN
+				if perr.Err == syscall.EINTR {
+					perr.Err = context.Canceled
+				}
+			}
+			if !eagain {
+				return n, err
+			}
+		}
+		select {
+		case <-fio.ctx.Done():
+			return n, &os.PathError{
+				Op:   "write",
+				Path: fio.f.Name(),
+				Err:  context.Canceled,
+			}
+		default:
+		}
+	}
+	return n, nil
 }
 
-func (fio fio) Read(data []byte) (n int, err error) {
+func (fio fio) Read(data []byte) (int, error) {
 	defer interrupt(fio.ctx)()
-	return fio.f.Read(data)
+
+	// The io.Reader contract encourages us not to return zero bytes,
+	// so we spin on EAGAIN until we are canceled or bytes appear.
+	for {
+		n, err := fio.f.Read(data)
+		if err != nil {
+			eagain := false
+			if perr, ok := err.(*os.PathError); ok {
+				eagain = perr.Err == syscall.EAGAIN
+				if perr.Err == syscall.EINTR {
+					perr.Err = context.Canceled
+				}
+			}
+			if !eagain {
+				return n, err
+			}
+		}
+		if n > 0 {
+			return n, err
+		}
+		select {
+		case <-fio.ctx.Done():
+			return n, &os.PathError{
+				Op:   "write",
+				Path: fio.f.Name(),
+				Err:  context.Canceled,
+			}
+		default:
+		}
+	}
+	return len(data), nil
 }
 
 func (fio fio) ReadAt(p []byte, off int64) (n int, err error) {
 	defer interrupt(fio.ctx)()
+	// TODO: oh dear O_NONBLOCK woes.
 	return fio.f.ReadAt(p, off)
 }
 

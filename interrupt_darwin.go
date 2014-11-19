@@ -31,7 +31,7 @@ func setsighandler() {
 	sa.sa_flags = SA_ONSTACK
 	sa.sa_mask = ^uint32(0)
 	sa.sa_tramp = unsafe.Pointer(funcPC(sigtramp))
-	*(*uintptr)(unsafe.Pointer(&sa.__sigaction_u)) = funcPC(mysighandler)
+	*(*uintptr)(unsafe.Pointer(&sa.__sigaction_u)) = funcPC(intrHandler)
 	_, _, errno := syscall.Syscall(SYS_SIGACTION, uintptr(intrSig), uintptr(unsafe.Pointer(&sa)), 0)
 	if errno != 0 {
 		panic(errno.Error())

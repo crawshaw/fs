@@ -82,7 +82,58 @@ func TestWriteInterruptPipe(t *testing.T) {
 }
 */
 
-func TestReadInterruptOnBlockingPipe(t *testing.T) {
+var signalCaught bool
+
+func signalCaughtHandler(sig int32) {
+	signalCaught = true
+}
+
+func TestInterruptRead(t *testing.T) {
+	// Take over the interrupt handler, reset it when done.
+	origHandler := intrHandler
+	signalCaught = false
+	intrHandler = signalCaughtHandler
+	setsighandler()
+	defer func() {
+		intrHandler = origHandler
+		setsighandler()
+	}()
+
+	// Cancel a raw pipe with a configured interrupt.
+	ctx, cancel := context.WithCancel(context.Background())
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		var err error
+		func() {
+			defer interrupt(ctx)()
+			_, err = r.Read(make([]byte, 1<<8))
+		}()
+		done <- err
+	}()
+
+	time.Sleep(50 * time.Millisecond) // TODO something better
+
+	cancel()
+	readErr := <-done
+
+	if readErr.(*os.PathError).Err != syscall.EINTR {
+		t.Errorf("not interrupted, got: %v", readErr)
+	}
+
+	if !signalCaught {
+		t.Errorf("signal handler never called")
+	}
+
+	w.Close()
+	r.Close()
+}
+
+func TestCancelRead(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Manually assemble the pipe to avoid setting it to non-blocking.
@@ -98,13 +149,13 @@ func TestReadInterruptOnBlockingPipe(t *testing.T) {
 		done <- err
 	}()
 
-	time.Sleep(100 * time.Millisecond) // TODO something better
+	time.Sleep(50 * time.Millisecond) // TODO something better
 
 	cancel()
 	readErr := <-done
 
-	if readErr.(*os.PathError).Err != syscall.EINTR {
-		t.Errorf("not interrupted")
+	if readErr.(*os.PathError).Err != context.Canceled {
+		t.Errorf("not canceled, got: %v", readErr)
 	}
 
 	w.f.Close()
