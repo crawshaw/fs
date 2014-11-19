@@ -8,13 +8,13 @@ import (
 )
 
 const (
-	SYS_SIGACTION       = 46
-	SYS_PTHREAD_KILL    = 328
-	SYS_PTHREAD_SIGMASK = 329
+	_SYS_SIGACTION       = 46
+	_SYS_PTHREAD_KILL    = 328
+	_SYS_PTHREAD_SIGMASK = 329
 )
 
 func threadKill(tid uintptr) error {
-	_, _, errno := syscall.Syscall(SYS_PTHREAD_KILL, tid, uintptr(intrSig), 0)
+	_, _, errno := syscall.Syscall(_SYS_PTHREAD_KILL, tid, uintptr(intrSig), 0)
 	if errno != 0 {
 		return errno
 	}
@@ -32,20 +32,20 @@ func setsighandler() {
 	sa.sa_mask = ^uint32(0)
 	sa.sa_tramp = unsafe.Pointer(funcPC(sigtramp))
 	*(*uintptr)(unsafe.Pointer(&sa.__sigaction_u)) = funcPC(intrHandler)
-	_, _, errno := syscall.Syscall(SYS_SIGACTION, uintptr(intrSig), uintptr(unsafe.Pointer(&sa)), 0)
+	_, _, errno := syscall.Syscall(_SYS_SIGACTION, uintptr(intrSig), uintptr(unsafe.Pointer(&sa)), 0)
 	if errno != 0 {
 		panic(errno.Error())
 	}
 }
 
 // TODO: do we need to block/unblock the signal? it appears not
-const SIG_SETMASK = 3
+const _SIG_SETMASK = 3
 
 var oset uint32
 
 func blocksig() {
 	osetptr := uintptr(unsafe.Pointer(&oset))
-	syscall.Syscall(SYS_PTHREAD_SIGMASK, SIG_SETMASK, osetptr, 0)
+	syscall.Syscall(_SYS_PTHREAD_SIGMASK, _SIG_SETMASK, osetptr, 0)
 }
 
 func unblocksig() {
@@ -53,5 +53,5 @@ func unblocksig() {
 	sigsetnone := uint32(0)
 	sigsetnoneptr := uintptr(unsafe.Pointer(&sigsetnone))
 	osetptr := uintptr(unsafe.Pointer(&oset))
-	syscall.Syscall(SYS_PTHREAD_SIGMASK, SIG_SETMASK, sigsetnoneptr, osetptr)
+	syscall.Syscall(_SYS_PTHREAD_SIGMASK, _SIG_SETMASK, sigsetnoneptr, osetptr)
 }

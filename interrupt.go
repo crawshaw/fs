@@ -10,9 +10,6 @@ import (
 
 const intrSig = syscall.SIGUSR1
 
-const SIG_DFL = 0
-const SIG_IGN = 1
-
 func funcPC(f interface{}) uintptr {
 	const ptrSize = unsafe.Sizeof(uintptr(0))
 	pc := uintptr(unsafe.Pointer(&f)) + ptrSize
