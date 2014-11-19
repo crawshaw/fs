@@ -23,7 +23,7 @@
 // context will not work. Examples include:
 //
 // - darwin will not interrupt a partially successful write to a pipe
-
+//
 // - linux will not interrupt normal disk I/O (see SA_RESTART in signal(7)).
 //
 // As cancellation of contexts should be treated as advisory, it is best to
