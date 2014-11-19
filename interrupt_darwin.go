@@ -39,6 +39,7 @@ func setsighandler() {
 }
 
 // TODO: do we need to block/unblock the signal? it appears not
+// probably because of our use of pthread_kill instead of kill.
 const _SIG_SETMASK = 3
 
 var oset uint32
