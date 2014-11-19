@@ -3,6 +3,7 @@ package fs
 import (
 	"bytes"
 	"io/ioutil"
+	"log"
 	"os"
 	"syscall"
 	"testing"
@@ -43,7 +44,8 @@ func TestOpen(t *testing.T) {
 	}
 }
 
-/*
+// TODO: test spurious signal does not cancel
+
 // This test does not work on darwin. A write(2) that is partially started
 // will be restarted even if the handler does not specify SA_RESTART. Ugh.
 func TestWriteInterruptPipe(t *testing.T) {
@@ -53,8 +55,7 @@ func TestWriteInterruptPipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	//setnonblock(int32(r.f.Fd()))
-	//setnonblock(int32(w.f.Fd()))
+	w.SetNonBlocking()
 
 	done := make(chan struct{}, 1)
 	go func() {
@@ -70,17 +71,16 @@ func TestWriteInterruptPipe(t *testing.T) {
 	log.Printf("calling cancel")
 	cancel()
 	log.Printf("canceled")
-	time.Sleep(1 * time.Second)
+	time.Sleep(50 * time.Millisecond)
 	log.Printf("slept, if not done yet, busted")
-	n, err = r.f.Read(make([]byte, 1<<20))
-	log.Printf("cheated, read out of pipa, %v, err=%v", n, err)
+	//n, err = r.f.Read(make([]byte, 1<<20))
+	//log.Printf("cheated, read out of pipa, %v, err=%v", n, err)
 	<-done
 	log.Printf("test done")
 
 	w.f.Close()
 	r.f.Close()
 }
-*/
 
 var signalCaught bool
 

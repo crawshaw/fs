@@ -1,6 +1,38 @@
 // Package fs provides Context-aware file system access.
 //
-// TODO: implement.
+// A file is typically opened with Open or Create. The File object can
+// provide io.Reader and io.Writer views on the file bound to a context
+// using the IO method. For example to read a file:
+//
+//	ctx := context.WithTimeout(context.Background(), 1*time.Second)
+//	f, err := fs.Open("file.go")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	b, err := ioutil.ReadAll(f.IO(ctx))
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+// Interrupting the underlying system calls is implemented using operating
+// system signals. This package uses SIGUSR1, programs that use this package
+// should avoid using that signal to minimize the performance penalty.
+//
+// There are several known conditions where blocking system calls cannot be
+// interrupted even by non-restartable signals. In those cases, canceling a
+// context will not work. Examples include:
+//
+// - darwin will not interrupt a partially successful write to a pipe
+// - linux will not interrupt normal disk I/O (see SA_RESTART in signal(7)).
+//
+// As cancellation of contexts should be treated as advisory, it is best to
+// program with the expectation that some calls will not be cleaned up
+// promptly. If this is not possible, calling the SetNonBlocking method on
+// a File object will enable non-blocking I/O. The contract of the io.Reader
+// and io.Writer interfaces will be met, though at a potential performance
+// penalty.
+//
+// TODO: document and implement OpenLimit.
 package fs
 
 import (
@@ -25,16 +57,28 @@ type IO interface {
 	io.Closer
 }
 
+// File holds an open file descriptor.
 type File struct {
 	f *os.File
 }
 
+// IO returns an IO object bound to ctx for all of its operations.
+//
+// The underlying file descriptor is shared with File. IO can be called
+// multiple times with different ctx values.
 func (f *File) IO(ctx context.Context) IO {
 	return fio{f.f, ctx}
 }
 
+// Name returns the name of the file as presented to Open.
 func (f *File) Name() string {
 	return f.f.Name()
+}
+
+// SetNonBlocking puts the underlying file descriptor into non-blocking mode.
+// This is equivalent to O_NONBLOCK.
+func (f *File) SetNonBlocking() {
+	setnonblock(f.f.Fd())
 }
 
 func newFile(osf *os.File) *File {
@@ -56,8 +100,7 @@ func newFile(osf *os.File) *File {
 //
 // If there is an error, it will be of type *PathError.
 func Open(ctx context.Context, name string) (file *File, err error) {
-	// TODO: is O_NONBLOCK a bad idea?
-	return OpenFile(ctx, name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	return OpenFile(ctx, name, os.O_RDONLY, 0)
 }
 
 // OpenFile is the generalized open call; most users will use Open
@@ -95,6 +138,34 @@ func (fio fio) Seek(offset int64, whence int) (int64, error) {
 	return fio.f.Seek(offset, whence)
 }
 
+// errAgain checks for EAGAIN or EINTR.
+func errAgain(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	perr, ok := err.(*os.PathError)
+	if !ok {
+		return err
+	}
+	switch perr.Err {
+	case syscall.EAGAIN:
+		return nil
+	case syscall.EINTR:
+		// Double check that the context is canceled.
+		// If not, this may be a spurious signal
+		// sent to the program for some other purpose.
+		select {
+		case <-ctx.Done():
+			perr.Err = context.Canceled
+			return perr
+		default:
+			return nil // keep going
+		}
+	default:
+		return err
+	}
+}
+
 func (fio fio) Write(p []byte) (int, error) {
 	defer interrupt(fio.ctx)()
 	n := 0
@@ -102,17 +173,9 @@ func (fio fio) Write(p []byte) (int, error) {
 		wn, err := fio.f.Write(p)
 		n += wn
 		p = p[wn:]
+		err = errAgain(fio.ctx, err)
 		if err != nil {
-			eagain := false
-			if perr, ok := err.(*os.PathError); ok {
-				eagain = perr.Err == syscall.EAGAIN
-				if perr.Err == syscall.EINTR {
-					perr.Err = context.Canceled
-				}
-			}
-			if !eagain {
-				return n, err
-			}
+			return n, err
 		}
 		select {
 		case <-fio.ctx.Done():
@@ -134,17 +197,9 @@ func (fio fio) Read(data []byte) (int, error) {
 	// so we spin on EAGAIN until we are canceled or bytes appear.
 	for {
 		n, err := fio.f.Read(data)
+		err = errAgain(fio.ctx, err)
 		if err != nil {
-			eagain := false
-			if perr, ok := err.(*os.PathError); ok {
-				eagain = perr.Err == syscall.EAGAIN
-				if perr.Err == syscall.EINTR {
-					perr.Err = context.Canceled
-				}
-			}
-			if !eagain {
-				return n, err
-			}
+			return n, err
 		}
 		if n > 0 {
 			return n, err
