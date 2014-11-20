@@ -16,7 +16,6 @@ func funcPC(f interface{}) uintptr {
 	return **(**uintptr)(unsafe.Pointer(pc))
 }
 
-func threadID() uintptr
 func sigtramp()
 
 var intrHandler = func(sig int32) {}

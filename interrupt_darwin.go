@@ -13,6 +13,8 @@ const (
 	_SYS_PTHREAD_SIGMASK = 329
 )
 
+func threadID() uintptr
+
 func threadKill(tid uintptr) error {
 	_, _, errno := syscall.Syscall(_SYS_PTHREAD_KILL, tid, uintptr(intrSig), 0)
 	if errno != 0 {
